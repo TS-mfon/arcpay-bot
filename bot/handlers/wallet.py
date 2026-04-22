@@ -25,13 +25,11 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wallet_svc, user = await _ensure_user(update, context)
 
     usdc_balance = await wallet_svc.get_usdc_balance(user.wallet_address)
-    eth_balance = await wallet_svc.get_eth_balance(user.wallet_address)
 
     msg = (
         f"Your Balance\n"
         f"{'=' * 20}\n"
         f"USDC: {format_usdc(usdc_balance)}\n"
-        f"ARC (gas): {eth_balance:.6f}\n"
         f"\nAddress: {format_address(user.wallet_address)}"
     )
     await update.message.reply_text(msg)
@@ -45,8 +43,7 @@ async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Deposit Address\n"
         f"{'=' * 20}\n\n"
         f"{user.wallet_address}\n\n"
-        f"Send USDC on Arc Network to this address.\n"
-        f"Make sure you also send a small amount of ARC for gas fees."
+        f"Send USDC on Arc Testnet to this address."
     )
     await update.message.reply_text(msg)
 
