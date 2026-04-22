@@ -1,4 +1,8 @@
-"""Payment service - on-chain USDC transfers."""
+"""Payment service - on-chain USDC transfers on Arc Network.
+
+On Arc, USDC is the NATIVE gas token (like ETH on Ethereum).
+So we use native value transfers, not ERC20 calls.
+"""
 
 import logging
 from typing import Optional
@@ -6,14 +10,7 @@ from typing import Optional
 from web3 import Web3
 from eth_account import Account
 
-from bot.config import (
-    ARC_RPC_URL,
-    USDC_CONTRACT_ADDRESS,
-    ESCROW_CONTRACT_ADDRESS,
-    ERC20_ABI,
-    ESCROW_ABI,
-    USDC_DECIMALS,
-)
+from bot.config import ARC_RPC_URL
 from bot.db.database import Database
 from bot.models.payment import Payment, PaymentType, PaymentStatus
 from bot.utils.encryption import decrypt_private_key
@@ -22,27 +19,19 @@ logger = logging.getLogger(__name__)
 
 
 class PaymentService:
-    """Handles on-chain USDC payments."""
+    """Handles on-chain USDC payments on Arc Network.
+
+    Since USDC is Arc's native token, all transfers are simple
+    value transfers (like sending ETH on Ethereum).
+    """
 
     def __init__(self, db: Database):
         self.db = db
         self.w3 = Web3(Web3.HTTPProvider(ARC_RPC_URL))
 
-    def _get_usdc_contract(self):
-        return self.w3.eth.contract(
-            address=Web3.to_checksum_address(USDC_CONTRACT_ADDRESS),
-            abi=ERC20_ABI,
-        )
-
-    def _get_escrow_contract(self):
-        return self.w3.eth.contract(
-            address=Web3.to_checksum_address(ESCROW_CONTRACT_ADDRESS),
-            abi=ESCROW_ABI,
-        )
-
-    def _to_usdc_units(self, amount: float) -> int:
-        """Convert human-readable amount to USDC units (6 decimals)."""
-        return int(amount * (10**USDC_DECIMALS))
+    def _to_wei(self, amount: float) -> int:
+        """Convert human-readable USDC amount to wei (18 decimals on Arc)."""
+        return self.w3.to_wei(amount, "ether")
 
     async def send_usdc(
         self,
@@ -55,30 +44,30 @@ class PaymentService:
         memo: Optional[str] = None,
         payment_type: PaymentType = PaymentType.SEND,
     ) -> Optional[str]:
-        """Send USDC from one user to another via direct transfer.
+        """Send USDC (native token) from one user to another.
 
+        On Arc, this is a simple native value transfer.
         Returns the transaction hash or None on failure.
         """
         try:
             private_key = decrypt_private_key(encrypted_private_key)
-            usdc = self._get_usdc_contract()
-            amount_units = self._to_usdc_units(amount)
+            amount_wei = self._to_wei(amount)
 
             from_checksum = Web3.to_checksum_address(from_address)
             to_checksum = Web3.to_checksum_address(to_address)
 
             nonce = self.w3.eth.get_transaction_count(from_checksum)
+            gas_price = self.w3.eth.gas_price
 
-            tx = usdc.functions.transfer(
-                to_checksum, amount_units
-            ).build_transaction(
-                {
-                    "from": from_checksum,
-                    "nonce": nonce,
-                    "gas": 100_000,
-                    "gasPrice": self.w3.eth.gas_price,
-                }
-            )
+            tx = {
+                "from": from_checksum,
+                "to": to_checksum,
+                "value": amount_wei,
+                "nonce": nonce,
+                "gas": 21_000,  # Standard transfer gas
+                "gasPrice": gas_price,
+                "chainId": self.w3.eth.chain_id,
+            }
 
             signed = Account.sign_transaction(tx, private_key)
             tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
@@ -98,88 +87,22 @@ class PaymentService:
             await self.db.create_payment(payment)
 
             logger.info(
-                "Payment sent: %s -> %s, amount=%s, tx=%s",
-                from_address,
-                to_address,
-                amount,
-                tx_hash_hex,
+                "Payment sent: %s -> %s, amount=%s USDC, tx=%s",
+                from_address, to_address, amount, tx_hash_hex,
             )
+
+            # Send notification to recipient if they're a bot user
+            if to_user_id and to_user_id > 0:
+                try:
+                    bot = self.w3  # placeholder - notification handled in handler
+                    logger.info("Recipient %s should be notified", to_user_id)
+                except Exception:
+                    pass
+
             return tx_hash_hex
 
         except Exception as e:
             logger.error("Payment failed: %s", str(e))
-            return None
-
-    async def send_via_escrow(
-        self,
-        from_user_id: int,
-        to_user_id: int,
-        from_address: str,
-        to_address: str,
-        amount: float,
-        encrypted_private_key: str,
-        memo: str = "",
-    ) -> Optional[str]:
-        """Send USDC via the ArcPayEscrow contract."""
-        try:
-            private_key = decrypt_private_key(encrypted_private_key)
-            escrow = self._get_escrow_contract()
-            usdc = self._get_usdc_contract()
-            amount_units = self._to_usdc_units(amount)
-
-            from_checksum = Web3.to_checksum_address(from_address)
-            to_checksum = Web3.to_checksum_address(to_address)
-            escrow_address = Web3.to_checksum_address(ESCROW_CONTRACT_ADDRESS)
-
-            nonce = self.w3.eth.get_transaction_count(from_checksum)
-
-            # Approve escrow to spend USDC
-            approve_tx = usdc.functions.approve(
-                escrow_address, amount_units
-            ).build_transaction(
-                {
-                    "from": from_checksum,
-                    "nonce": nonce,
-                    "gas": 60_000,
-                    "gasPrice": self.w3.eth.gas_price,
-                }
-            )
-            signed_approve = Account.sign_transaction(approve_tx, private_key)
-            self.w3.eth.send_raw_transaction(signed_approve.raw_transaction)
-            nonce += 1
-
-            # Send via escrow
-            send_tx = escrow.functions.sendPayment(
-                to_checksum, amount_units, memo
-            ).build_transaction(
-                {
-                    "from": from_checksum,
-                    "nonce": nonce,
-                    "gas": 150_000,
-                    "gasPrice": self.w3.eth.gas_price,
-                }
-            )
-            signed_send = Account.sign_transaction(send_tx, private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_send.raw_transaction)
-            tx_hash_hex = tx_hash.hex()
-
-            # Record in database
-            payment = Payment(
-                id=None,
-                from_user_id=from_user_id,
-                to_user_id=to_user_id,
-                amount=amount,
-                memo=memo,
-                tx_hash=tx_hash_hex,
-                payment_type=PaymentType.SEND,
-                status=PaymentStatus.COMPLETED,
-            )
-            await self.db.create_payment(payment)
-
-            return tx_hash_hex
-
-        except Exception as e:
-            logger.error("Escrow payment failed: %s", str(e))
             return None
 
     async def batch_send(
@@ -190,73 +113,22 @@ class PaymentService:
         amounts: list[float],
         encrypted_private_key: str,
         memo: str = "",
-    ) -> Optional[str]:
-        """Send USDC to multiple recipients via the escrow batch function.
+    ) -> list[Optional[str]]:
+        """Send USDC to multiple recipients as individual native transfers.
 
-        recipients: list of (telegram_id, wallet_address) tuples
+        Returns list of tx hashes (one per recipient).
         """
-        try:
-            private_key = decrypt_private_key(encrypted_private_key)
-            escrow = self._get_escrow_contract()
-            usdc = self._get_usdc_contract()
-
-            from_checksum = Web3.to_checksum_address(from_address)
-            escrow_address = Web3.to_checksum_address(ESCROW_CONTRACT_ADDRESS)
-
-            to_addresses = [
-                Web3.to_checksum_address(addr) for _, addr in recipients
-            ]
-            amount_units = [self._to_usdc_units(a) for a in amounts]
-            total_units = sum(amount_units)
-
-            nonce = self.w3.eth.get_transaction_count(from_checksum)
-
-            # Approve total
-            approve_tx = usdc.functions.approve(
-                escrow_address, total_units
-            ).build_transaction(
-                {
-                    "from": from_checksum,
-                    "nonce": nonce,
-                    "gas": 60_000,
-                    "gasPrice": self.w3.eth.gas_price,
-                }
+        results = []
+        for i, (user_id, addr) in enumerate(recipients):
+            tx_hash = await self.send_usdc(
+                from_user_id=from_user_id,
+                to_user_id=user_id,
+                from_address=from_address,
+                to_address=addr,
+                amount=amounts[i],
+                encrypted_private_key=encrypted_private_key,
+                memo=memo,
+                payment_type=PaymentType.SPLIT,
             )
-            signed_approve = Account.sign_transaction(approve_tx, private_key)
-            self.w3.eth.send_raw_transaction(signed_approve.raw_transaction)
-            nonce += 1
-
-            # Batch send
-            batch_tx = escrow.functions.batchSendPayment(
-                to_addresses, amount_units, memo
-            ).build_transaction(
-                {
-                    "from": from_checksum,
-                    "nonce": nonce,
-                    "gas": 50_000 + 100_000 * len(recipients),
-                    "gasPrice": self.w3.eth.gas_price,
-                }
-            )
-            signed_batch = Account.sign_transaction(batch_tx, private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_batch.raw_transaction)
-            tx_hash_hex = tx_hash.hex()
-
-            # Record individual payments
-            for i, (user_id, _) in enumerate(recipients):
-                payment = Payment(
-                    id=None,
-                    from_user_id=from_user_id,
-                    to_user_id=user_id,
-                    amount=amounts[i],
-                    memo=memo,
-                    tx_hash=tx_hash_hex,
-                    payment_type=PaymentType.SPLIT,
-                    status=PaymentStatus.COMPLETED,
-                )
-                await self.db.create_payment(payment)
-
-            return tx_hash_hex
-
-        except Exception as e:
-            logger.error("Batch payment failed: %s", str(e))
-            return None
+            results.append(tx_hash)
+        return results

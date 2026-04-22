@@ -5,7 +5,7 @@ from eth_account import Account
 from bot.db.database import Database
 from bot.models.user import User
 from bot.utils.encryption import encrypt_private_key, decrypt_private_key
-from bot.config import ARC_RPC_URL, USDC_CONTRACT_ADDRESS, ERC20_ABI
+from bot.config import ARC_RPC_URL
 
 from web3 import Web3
 
@@ -29,7 +29,6 @@ class WalletService:
         user = await self.db.get_user(telegram_id)
 
         if user:
-            # Update username if changed
             if username and user.username != username:
                 await self.db.update_username(telegram_id, username)
                 user.username = username
@@ -54,28 +53,24 @@ class WalletService:
         return decrypt_private_key(user.encrypted_private_key)
 
     async def get_usdc_balance(self, address: str) -> float:
-        """Get USDC balance for an address."""
-        if not USDC_CONTRACT_ADDRESS:
-            return 0.0
+        """Get USDC balance for an address.
 
-        try:
-            contract = self.w3.eth.contract(
-                address=Web3.to_checksum_address(USDC_CONTRACT_ADDRESS),
-                abi=ERC20_ABI,
-            )
-            balance_raw = contract.functions.balanceOf(
-                Web3.to_checksum_address(address)
-            ).call()
-            return balance_raw / 1e6  # USDC has 6 decimals
-        except Exception:
-            return 0.0
-
-    async def get_eth_balance(self, address: str) -> float:
-        """Get native ETH/ARC balance for gas."""
+        On Arc Network, USDC is the NATIVE gas token.
+        So we use eth_getBalance, not an ERC20 call.
+        The balance is returned in 18 decimals (like ETH).
+        """
         try:
             balance_wei = self.w3.eth.get_balance(
                 Web3.to_checksum_address(address)
             )
-            return self.w3.from_wei(balance_wei, "ether")
-        except Exception:
+            # Arc native token (USDC) uses 18 decimals
+            return float(self.w3.from_wei(balance_wei, "ether"))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Balance check failed: {e}")
             return 0.0
+
+    async def resolve_user_by_username(self, username: str) -> User | None:
+        """Resolve a Telegram @username to a registered user."""
+        username = username.lstrip("@")
+        return await self.db.get_user_by_username(username)
