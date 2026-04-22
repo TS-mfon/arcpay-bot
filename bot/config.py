@@ -9,7 +9,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 # Arc Network / Web3
-ARC_RPC_URL: str = os.getenv("ARC_RPC_URL", "https://testnet-rpc.arc.dev")
+ARC_RPC_URL: str = os.getenv("ARC_RPC_URL", "https://rpc.testnet.arc.network")
 USDC_CONTRACT_ADDRESS: str = os.getenv("USDC_CONTRACT_ADDRESS", "")
 ESCROW_CONTRACT_ADDRESS: str = os.getenv("ESCROW_CONTRACT_ADDRESS", "")
 
