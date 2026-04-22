@@ -1,3 +1,7 @@
+import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 """ArcPay Bot - Telegram P2P Payment System on Arc Network."""
 
 import asyncio
@@ -68,3 +72,19 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok","bot":"arcpay"}')
+    def log_message(self, *args):
+        pass
+
+def start_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+# Start health server for Render
+threading.Thread(target=start_health_server, daemon=True).start()
