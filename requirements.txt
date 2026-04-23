@@ -1,7 +1,9 @@
-python-telegram-bot==21.3
+python-telegram-bot==21.6
 web3==7.6.0
-cryptography==43.0.3
-Pillow==11.1.0
-python-dotenv==1.0.1
-aiosqlite==0.20.0
-eth-account==0.13.4
+eth-account==0.13.7
+cryptography==45.0.7
+Pillow==12.2.0
+python-dotenv==1.1.1
+aiosqlite==0.22.1
+apscheduler==3.10.4
+qrcode==8.2

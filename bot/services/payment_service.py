@@ -1,37 +1,52 @@
-"""Payment service - on-chain USDC transfers on Arc Network.
+"""Payment service - on-chain native USDC transfers on Arc Network.
 
-On Arc, USDC is the NATIVE gas token (like ETH on Ethereum).
-So we use native value transfers, not ERC20 calls.
+On Arc, USDC is the NATIVE gas token (chain id 5042002).
+So all transfers are simple native value transfers like sending ETH.
 """
 
+import asyncio
 import logging
 from typing import Optional
 
 from web3 import Web3
 from eth_account import Account
 
-from bot.config import ARC_RPC_URL
+from bot.config import ARC_RPC_URL, ARC_CHAIN_ID
 from bot.db.database import Database
 from bot.models.payment import Payment, PaymentType, PaymentStatus
 from bot.utils.encryption import decrypt_private_key
 
 logger = logging.getLogger(__name__)
 
+GAS_LIMIT_NATIVE = 21_000
+RECEIPT_POLL_ATTEMPTS = 30
+RECEIPT_POLL_INTERVAL = 2.0  # seconds
+
 
 class PaymentService:
-    """Handles on-chain USDC payments on Arc Network.
-
-    Since USDC is Arc's native token, all transfers are simple
-    value transfers (like sending ETH on Ethereum).
-    """
+    """Handles on-chain USDC payments on Arc Network."""
 
     def __init__(self, db: Database):
         self.db = db
-        self.w3 = Web3(Web3.HTTPProvider(ARC_RPC_URL))
+        self.w3 = Web3(Web3.HTTPProvider(ARC_RPC_URL, request_kwargs={"timeout": 30}))
 
     def _to_wei(self, amount: float) -> int:
-        """Convert human-readable USDC amount to wei (18 decimals on Arc)."""
+        """Convert human-readable USDC to 18-decimal wei (Arc native)."""
         return self.w3.to_wei(amount, "ether")
+
+    async def _wait_receipt(self, tx_hash: str) -> dict | None:
+        """Poll for transaction receipt with timeout."""
+        for _ in range(RECEIPT_POLL_ATTEMPTS):
+            try:
+                receipt = await asyncio.to_thread(
+                    self.w3.eth.get_transaction_receipt, tx_hash
+                )
+                if receipt is not None:
+                    return dict(receipt)
+            except Exception:
+                pass
+            await asyncio.sleep(RECEIPT_POLL_INTERVAL)
+        return None
 
     async def send_usdc(
         self,
@@ -44,10 +59,11 @@ class PaymentService:
         memo: Optional[str] = None,
         payment_type: PaymentType = PaymentType.SEND,
     ) -> Optional[str]:
-        """Send USDC (native token) from one user to another.
+        """Send USDC (native) between addresses on Arc.
 
-        On Arc, this is a simple native value transfer.
-        Returns the transaction hash or None on failure.
+        Returns tx hash on success or None on failure.
+        Writes to DB with PENDING status immediately, updates to
+        COMPLETED or FAILED after receipt polling.
         """
         try:
             private_key = decrypt_private_key(encrypted_private_key)
@@ -56,24 +72,29 @@ class PaymentService:
             from_checksum = Web3.to_checksum_address(from_address)
             to_checksum = Web3.to_checksum_address(to_address)
 
-            nonce = self.w3.eth.get_transaction_count(from_checksum)
-            gas_price = self.w3.eth.gas_price
+            # Build and sign off the event loop
+            def _build_and_sign():
+                nonce = self.w3.eth.get_transaction_count(from_checksum)
+                gas_price = int(self.w3.eth.gas_price * 1.1)  # 10% buffer
+                tx = {
+                    "from": from_checksum,
+                    "to": to_checksum,
+                    "value": amount_wei,
+                    "nonce": nonce,
+                    "gas": GAS_LIMIT_NATIVE,
+                    "gasPrice": gas_price,
+                    "chainId": ARC_CHAIN_ID,
+                }
+                signed = Account.sign_transaction(tx, private_key)
+                return signed.raw_transaction
 
-            tx = {
-                "from": from_checksum,
-                "to": to_checksum,
-                "value": amount_wei,
-                "nonce": nonce,
-                "gas": 21_000,  # Standard transfer gas
-                "gasPrice": gas_price,
-                "chainId": self.w3.eth.chain_id,
-            }
+            raw_tx = await asyncio.to_thread(_build_and_sign)
+            tx_hash_bytes = await asyncio.to_thread(self.w3.eth.send_raw_transaction, raw_tx)
+            tx_hash_hex = tx_hash_bytes.hex()
+            if not tx_hash_hex.startswith("0x"):
+                tx_hash_hex = "0x" + tx_hash_hex
 
-            signed = Account.sign_transaction(tx, private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-            tx_hash_hex = tx_hash.hex()
-
-            # Record in database
+            # Record as pending
             payment = Payment(
                 id=None,
                 from_user_id=from_user_id,
@@ -82,28 +103,37 @@ class PaymentService:
                 memo=memo,
                 tx_hash=tx_hash_hex,
                 payment_type=payment_type,
-                status=PaymentStatus.COMPLETED,
+                status=PaymentStatus.PENDING,
             )
-            await self.db.create_payment(payment)
+            try:
+                await self.db.create_payment(payment)
+            except Exception:
+                logger.exception("DB insert failed (non-fatal)")
+
+            # Fire-and-forget receipt watcher (updates DB)
+            asyncio.create_task(self._watch_receipt(tx_hash_hex))
 
             logger.info(
-                "Payment sent: %s -> %s, amount=%s USDC, tx=%s",
+                "TX sent: %s -> %s  amount=%s  hash=%s",
                 from_address, to_address, amount, tx_hash_hex,
             )
-
-            # Send notification to recipient if they're a bot user
-            if to_user_id and to_user_id > 0:
-                try:
-                    bot = self.w3  # placeholder - notification handled in handler
-                    logger.info("Recipient %s should be notified", to_user_id)
-                except Exception:
-                    pass
-
             return tx_hash_hex
 
         except Exception as e:
-            logger.error("Payment failed: %s", str(e))
+            logger.exception("send_usdc failed: %s", e)
             return None
+
+    async def _watch_receipt(self, tx_hash: str) -> None:
+        """Update DB once the tx confirms or fails."""
+        receipt = await self._wait_receipt(tx_hash)
+        if receipt is None:
+            logger.warning("Receipt timeout for %s", tx_hash)
+            return
+        status = PaymentStatus.COMPLETED if receipt.get("status") == 1 else PaymentStatus.FAILED
+        try:
+            await self.db.update_payment_status_by_tx(tx_hash, status.value)
+        except Exception:
+            logger.exception("DB update failed")
 
     async def batch_send(
         self,
@@ -114,10 +144,7 @@ class PaymentService:
         encrypted_private_key: str,
         memo: str = "",
     ) -> list[Optional[str]]:
-        """Send USDC to multiple recipients as individual native transfers.
-
-        Returns list of tx hashes (one per recipient).
-        """
+        """Send to multiple recipients as sequential native transfers."""
         results = []
         for i, (user_id, addr) in enumerate(recipients):
             tx_hash = await self.send_usdc(
@@ -131,4 +158,6 @@ class PaymentService:
                 payment_type=PaymentType.SPLIT,
             )
             results.append(tx_hash)
+            # Small delay between transfers to avoid nonce collision
+            await asyncio.sleep(0.5)
         return results

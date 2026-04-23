@@ -16,8 +16,15 @@ ESCROW_CONTRACT_ADDRESS: str = os.getenv("ESCROW_CONTRACT_ADDRESS", "")
 # Encryption
 WALLET_ENCRYPTION_KEY: str = os.getenv("WALLET_ENCRYPTION_KEY", "")
 
-# USDC has 6 decimals
-USDC_DECIMALS: int = 6
+# On Arc Network, USDC is the NATIVE gas token (chain id 5042002).
+# The native token uses 18 decimals like ETH, NOT the 6 decimals
+# used by USDC ERC20 tokens on Ethereum mainnet.
+# So Web3.to_wei(amount, "ether") correctly converts USDC amounts.
+USDC_DECIMALS: int = 18
+
+# Arc chain config
+ARC_CHAIN_ID: int = int(os.getenv("ARC_CHAIN_ID", "5042002"))
+ARC_EXPLORER: str = os.getenv("ARC_EXPLORER", "https://testnet.arcscan.app")
 
 # Database
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "arcpay.db")

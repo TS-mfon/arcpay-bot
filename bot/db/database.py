@@ -174,6 +174,14 @@ class Database:
                 return self._row_to_payment(row)
         return None
 
+    async def update_payment_status_by_tx(self, tx_hash: str, status: str) -> None:
+        """Update payment status by tx hash (used by receipt watcher)."""
+        await self._db.execute(
+            "UPDATE payments SET status = ? WHERE tx_hash = ?",
+            (status, tx_hash),
+        )
+        await self._db.commit()
+
     async def get_user_payments(
         self, telegram_id: int, limit: int = 20
     ) -> List[Payment]:

@@ -16,6 +16,7 @@ class PaymentType(str, Enum):
 class PaymentStatus(str, Enum):
     PENDING = "pending"
     COMPLETED = "completed"
+    FAILED = "failed"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
 
