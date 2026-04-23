@@ -1,85 +1,86 @@
-# ArcPay Bot - Telegram P2P Payment System
+# ArcPay Bot — P2P USDC Payments on Arc Testnet
 
-A Venmo-like payment bot inside Telegram, powered by Arc Network's USDC rails.
+A production-grade Telegram bot for sending, requesting, and splitting **USDC** payments on Arc Network testnet (chain ID 5042002).
+
+## Key Fact: USDC is Native on Arc
+
+On Arc Network, **USDC is the native gas token** (not an ERC20 contract). All transactions use simple native value transfers, like sending ETH on Ethereum.
+
+- Balance queries use `eth_getBalance`
+- Transfers are 21,000-gas value transfers
+- USDC uses 18 decimals on Arc (same as ETH)
 
 ## Features
 
-- **Embedded Wallets**: Auto-created encrypted wallets per Telegram user
-- **Send USDC**: `/send @user <amount> [memo]`
-- **Request Payments**: `/request @user <amount> <reason>` and `/pay <id>`
-- **Split Expenses**: `/split <amount> <reason> @user1 @user2`
-- **Payment Links**: `/link <amount> <reason>`
-- **Tips**: `/tip @user <amount>`
-- **Transaction History**: `/history`
-- **Receipt Generation**: `/receipt <tx_hash>` (generates image receipts)
+### Wallet
+- `/balance` — Check your USDC balance
+- `/deposit` — Show deposit address + faucet link
+- `/withdraw <address> <amount>` — Withdraw to external address
 
-## Architecture
+### Payments
+- `/send @user <amount> [memo]` — Send USDC to another Telegram user
+- `/tip @user <amount>` — Quick tip in group chats
+- `/receipt <tx_hash>` — Generate receipt image
 
-```
-Telegram User <-> Bot (python-telegram-bot)
-                   |
-                   +-> SQLite (user data, tx history)
-                   +-> Web3 (Arc RPC)
-                   +-> ArcPayEscrow.sol (on-chain escrow)
-```
+### Requests
+- `/request @user <amount> <reason>` — Request payment
+- `/pay <request_id>` — Fulfill a request
+
+### Group
+- `/split <amount> <reason> @user1 @user2 ...` — Split an expense
+
+### Links
+- `/link <amount> [reason]` — Create a shareable payment link
+
+### History
+- `/history` — View your last 20 transactions
+
+## How @username Resolution Works
+
+Both sender and receiver must `/start` the bot first — this registers their Telegram username → wallet address mapping.
+
+If the recipient hasn't started the bot:
+> `@someone` hasn't registered with ArcPay yet. Ask them to `/start` first, or use `/withdraw <address>` directly.
+
+## Getting Testnet USDC
+
+1. Run `/deposit` to get your wallet address
+2. Visit https://faucet.circle.com
+3. Select **Arc Testnet**
+4. Paste your address and request USDC
+
+## Production Features
+
+- Real on-chain transactions with receipt polling
+- Dynamic gas pricing (10% buffer)
+- Incoming payment notifications
+- Deep-link payment links (`t.me/bot?start=pay_XXX`)
+- Rate limiting
+- Structured JSON logging
+- Multi-stage Docker build
+- Fernet-encrypted private keys
+
+## Smart Contract
+
+Optional `ArcPayEscrow` at `0x67aF28a3383b1c1343D7264EEc90a3aD87A7a72A` for on-chain payment requests.
 
 ## Setup
 
-### Smart Contracts (Foundry)
-
 ```bash
-cd contracts
-forge install foundry-rs/forge-std --no-commit
-forge install OpenZeppelin/openzeppelin-contracts --no-commit
-forge build
-forge test
-```
-
-### Deploy
-
-```bash
-cd contracts
-forge script script/Deploy.s.sol --rpc-url $ARC_RPC_URL --broadcast
-```
-
-### Bot
-
-```bash
+cp .env.example .env
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Paste as WALLET_ENCRYPTION_KEY
 pip install -r requirements.txt
 python -m bot.main
 ```
 
-### Docker
+## Deploy to Render
 
-```bash
-docker build -t arcpay-bot .
-docker run --env-file .env arcpay-bot
-```
+1. Create Web Service from this repo
+2. Docker runtime
+3. Set env vars from `.env.example`
+4. Deploy
 
-## Commands
+## License
 
-| Command | Description |
-|---------|-------------|
-| `/start` | Create wallet and get started |
-| `/help` | Show all commands |
-| `/balance` | Check USDC balance |
-| `/deposit` | Show deposit address |
-| `/withdraw <address> <amount>` | Withdraw USDC to external address |
-| `/send @user <amount> [memo]` | Send USDC to a Telegram user |
-| `/request @user <amount> <reason>` | Request payment from a user |
-| `/pay <id>` | Fulfill a payment request |
-| `/history` | View transaction history |
-| `/split <amount> <reason> @user1 @user2...` | Split expense among users |
-| `/link <amount> <reason>` | Create a payment link |
-| `/tip @user <amount>` | Tip a user |
-| `/receipt <tx_hash>` | Generate a receipt image |
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot API token |
-| `ARC_RPC_URL` | Arc Network RPC endpoint |
-| `USDC_CONTRACT_ADDRESS` | USDC token contract address |
-| `ESCROW_CONTRACT_ADDRESS` | Deployed ArcPayEscrow contract |
-| `WALLET_ENCRYPTION_KEY` | Fernet key for wallet encryption |
+MIT
