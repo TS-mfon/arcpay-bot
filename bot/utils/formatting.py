@@ -39,6 +39,9 @@ def build_help_message() -> str:
     return (
         "ArcPay Bot - Telegram P2P Payments\n"
         "====================================\n\n"
+        "Quick Access:\n"
+        "  /commands - List available commands with short descriptions\n"
+        "  /help - Show detailed command usage\n\n"
         "Wallet:\n"
         "  /balance - Check your USDC balance\n"
         "  /deposit - Show your deposit address\n"
@@ -56,6 +59,28 @@ def build_help_message() -> str:
         "History:\n"
         "  /history - View transaction history\n"
         "  /receipt <tx_hash> - Generate receipt image\n"
+    )
+
+
+def build_commands_message() -> str:
+    """Build a compact command list."""
+    return (
+        "ArcPay Bot - Available Commands\n"
+        "====================================\n\n"
+        "/start - Create or view your wallet\n"
+        "/commands - List available commands\n"
+        "/help - Show detailed command usage\n"
+        "/balance - Check your USDC balance\n"
+        "/deposit - Show your deposit address\n"
+        "/withdraw <address> <amount> - Withdraw USDC\n"
+        "/send @user <amount> [memo] - Send USDC\n"
+        "/tip @user <amount> - Tip a user\n"
+        "/request @user <amount> <reason> - Request payment\n"
+        "/pay <id> - Fulfill a payment request\n"
+        "/split <amount> <reason> @user1 @user2... - Split expense\n"
+        "/link <amount> <reason> - Create a payment link\n"
+        "/history - View transaction history\n"
+        "/receipt <tx_hash> - Generate receipt image\n"
     )
 
 

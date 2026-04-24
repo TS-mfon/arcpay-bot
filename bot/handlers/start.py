@@ -4,7 +4,24 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.services.wallet_service import WalletService
-from bot.utils.formatting import build_help_message, format_address
+from bot.utils.formatting import build_commands_message, build_help_message, format_address
+
+BOT_COMMANDS = [
+    ("start", "Create or view your wallet"),
+    ("commands", "List available commands"),
+    ("help", "Show detailed command usage"),
+    ("balance", "Check your USDC balance"),
+    ("deposit", "Show your deposit address"),
+    ("withdraw", "Withdraw USDC"),
+    ("send", "Send USDC to a user"),
+    ("tip", "Tip a user"),
+    ("request", "Request payment"),
+    ("pay", "Pay a request by id"),
+    ("split", "Split an expense"),
+    ("link", "Create a payment link"),
+    ("history", "View transaction history"),
+    ("receipt", "Generate a receipt image"),
+]
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -30,3 +47,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help - show all commands."""
     await update.message.reply_text(build_help_message())
+
+
+async def commands_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /commands - show compact command list."""
+    await update.message.reply_text(build_commands_message())

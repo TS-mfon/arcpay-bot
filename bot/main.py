@@ -5,11 +5,12 @@ import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler
 
 from bot.config import TELEGRAM_BOT_TOKEN
 from bot.db.database import Database
-from bot.handlers.start import start_command, help_command
+from bot.handlers.start import start_command, help_command, commands_command, BOT_COMMANDS
 from bot.handlers.wallet import balance_command, deposit_command, withdraw_command
 from bot.handlers.send import send_command
 from bot.handlers.request import request_command, pay_command
@@ -29,6 +30,9 @@ async def post_init(application):
     db = Database()
     await db.initialize()
     application.bot_data["db"] = db
+    await application.bot.set_my_commands(
+        [BotCommand(command, description) for command, description in BOT_COMMANDS]
+    )
     logger.info("Database initialized")
 
 
@@ -61,6 +65,7 @@ def main():
     )
 
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("commands", commands_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("balance", balance_command))
     application.add_handler(CommandHandler("deposit", deposit_command))
