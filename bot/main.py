@@ -19,6 +19,7 @@ from bot.handlers.split import split_command
 from bot.handlers.link import link_command
 from bot.handlers.tip import tip_command
 from bot.handlers.receipt import receipt_command
+from bot.utils.errors import error_handler
 from bot.utils.logging_config import setup_logging
 
 setup_logging()
@@ -78,6 +79,7 @@ def main():
     application.add_handler(CommandHandler("link", link_command))
     application.add_handler(CommandHandler("tip", tip_command))
     application.add_handler(CommandHandler("receipt", receipt_command))
+    application.add_error_handler(error_handler)
 
     logger.info("ArcPay Bot starting...")
     application.run_polling(drop_pending_updates=True)
