@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from bot.services.wallet_service import WalletService
 from bot.services.payment_service import PaymentService
 from bot.models.payment import PaymentType
-from bot.utils.formatting import format_usdc, format_address
+from bot.utils.formatting import error_message, format_usdc, format_address
 
 
 async def _ensure_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,7 +88,10 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = await wallet_svc.get_usdc_balance(user.wallet_address)
     if balance < amount:
         await update.message.reply_text(
-            f"Insufficient balance. You have {format_usdc(balance)}."
+            error_message(
+                f"Insufficient balance. You have {format_usdc(balance)}.",
+                "Run /deposit, fund your wallet, then run /balance before withdrawing.",
+            )
         )
         return
 
@@ -115,5 +118,8 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "Withdrawal failed. Please check your balance and try again."
+            error_message(
+                "Withdrawal failed before a transaction hash was returned.",
+                "Check /history first. If no transaction exists, verify the address and retry once.",
+            )
         )

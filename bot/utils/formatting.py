@@ -2,6 +2,8 @@
 
 from typing import Optional
 
+from bot.utils.errors import classify_error, support_code
+
 
 def format_usdc(amount: float) -> str:
     """Format a USDC amount for display."""
@@ -20,6 +22,23 @@ def format_tx_hash(tx_hash: str, chars: int = 8) -> str:
     if len(tx_hash) <= chars * 2 + 2:
         return tx_hash
     return f"{tx_hash[:chars + 2]}...{tx_hash[-chars:]}"
+
+
+def error_message(msg: str, hint: Optional[str] = None) -> str:
+    """Plain-text guided error for command handlers."""
+    error = RuntimeError(msg)
+    guide = classify_error(error)
+    lines = [
+        guide.title,
+        guide.explanation,
+        "",
+        "What to do next",
+    ]
+    lines.extend(f"- {step}" for step in guide.next_steps)
+    if hint:
+        lines.extend(["", f"Hint: {hint}"])
+    lines.extend(["", f"Support code: {support_code(error)}"])
+    return "\n".join(lines)
 
 
 def escape_markdown(text: str) -> str:

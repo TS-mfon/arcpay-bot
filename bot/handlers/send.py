@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from bot.services.wallet_service import WalletService
 from bot.services.payment_service import PaymentService
 from bot.services.user_resolver import UserResolver
-from bot.utils.formatting import format_usdc, payment_confirmation
+from bot.utils.formatting import error_message, format_usdc, payment_confirmation
 
 
 async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,8 +46,10 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     recipient = await resolver.resolve_username(recipient_username)
     if not recipient:
         await update.message.reply_text(
-            f"User {recipient_username} not found. "
-            f"They need to /start the bot first."
+            error_message(
+                f"User {recipient_username} not found.",
+                "Ask the recipient to open ArcPay and run /start first, then retry /send.",
+            )
         )
         return
 
@@ -55,7 +57,10 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = await wallet_svc.get_usdc_balance(sender.wallet_address)
     if balance < amount:
         await update.message.reply_text(
-            f"Insufficient balance. You have {format_usdc(balance)}."
+            error_message(
+                f"Insufficient balance. You have {format_usdc(balance)}.",
+                "Run /deposit, fund your wallet, then run /balance before retrying.",
+            )
         )
         return
 
@@ -84,5 +89,8 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg)
     else:
         await update.message.reply_text(
-            "Payment failed. Please check your balance and try again."
+            error_message(
+                "Payment failed before a transaction hash was returned.",
+                "Check /history first. If there is no transaction, verify /balance and retry once.",
+            )
         )
