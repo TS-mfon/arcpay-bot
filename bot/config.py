@@ -28,6 +28,10 @@ ARC_EXPLORER: str = os.getenv("ARC_EXPLORER", "https://testnet.arcscan.app")
 
 # Database
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "arcpay.db")
+WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "")
+RUNTIME_ORIGIN: str = os.getenv("RUNTIME_ORIGIN", "vps")
+BACKEND_ROLE: str = os.getenv("BACKEND_ROLE", "primary")
+REDIS_URL: str = os.getenv("REDIS_URL", "")
 
 # ERC-20 ABI (minimal for balanceOf, transfer, approve, transferFrom)
 ERC20_ABI = [

@@ -154,6 +154,11 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if not isinstance(update, Update):
         return
+    store = context.application.bot_data.get("delivery_state_store")
+    claimed_updates = context.application.bot_data.get("claimed_update_ids", set())
+    if store is not None and update.update_id in claimed_updates:
+        await store.mark_processed(update.update_id)
+        claimed_updates.discard(update.update_id)
     target = update.effective_message
     try:
         if target:
